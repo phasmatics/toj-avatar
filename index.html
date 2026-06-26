@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オーディオアニメーション</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Meiryo', sans-serif;
+            min-height: 100vh;
+            overflow: hidden;
+            background-color: rgba(0, 0, 0, 1);
+        }
+
+        .bg-control {
+            position: fixed;
+            top: 12px;
+            left: 12px;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: rgba(40, 40, 40, 0.85);
+            border-radius: 6px;
+            color: #fff;
+            font-size: 13px;
+            user-select: none;
+        }
+
+        .bg-control label {
+            white-space: nowrap;
+        }
+
+        .bg-control input[type="range"] {
+            width: 120px;
+            cursor: pointer;
+        }
+
+        .bg-control .opacity-value {
+            min-width: 36px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .main-container {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .avatar-side {
+            position: relative;
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .animation-image {
+            position: absolute;
+            width: 320px;
+            height: 320px;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            opacity: 0;
+            transition: none;
+        }
+
+        .animation-image.active {
+            opacity: 1;
+        }
+
+        .error-message {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff0000;
+            text-align: center;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+            display: none;
+            z-index: 200;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-control">
+        <label for="bgOpacity">背景透過度</label>
+        <input type="range" id="bgOpacity" min="0" max="100" value="0">
+        <span class="opacity-value" id="bgOpacityValue">0%</span>
+    </div>
+
+    <div class="main-container">
+        <div class="avatar-side avatar-left">
+            <img src="img/p1.png" alt="P Frame 1" class="animation-image" id="imageP1">
+            <img src="img/p2.png" alt="P Frame 2" class="animation-image" id="imageP2">
+        </div>
+        <div class="avatar-side avatar-right">
+            <img src="img/m1.png" alt="M Frame 1" class="animation-image" id="imageM1">
+            <img src="img/m2.png" alt="M Frame 2" class="animation-image" id="imageM2">
+        </div>
+    </div>
+
+    <div class="error-message" id="errorMessage">
+        マイクへのアクセスが拒否されました
+    </div>
+
+    <script>
+        let audioContext;
+        let analyser;
+        let microphone;
+        let timeDataArray;
+        let animationFrameId;
+        let currentFrame = 0;
+        let lastFrameTime = 0;
+        const FRAME_INTERVAL = 100;
+
+        const MIN_DB = -60;
+        const THRESHOLD_DB = -50;
+        let isAnimating = false;
+
+        const imagePairs = [
+            [document.getElementById('imageP1'), document.getElementById('imageP2')],
+            [document.getElementById('imageM1'), document.getElementById('imageM2')]
+        ];
+
+        const bgOpacitySlider = document.getElementById('bgOpacity');
+        const bgOpacityValue = document.getElementById('bgOpacityValue');
+
+        function updateBackgroundOpacity() {
+            const transparency = Number(bgOpacitySlider.value);
+            const alpha = 1 - transparency / 100;
+            document.body.style.backgroundColor = `rgba(0, 0, 0, ${alpha})`;
+            bgOpacityValue.textContent = `${transparency}%`;
+        }
+
+        bgOpacitySlider.addEventListener('input', updateBackgroundOpacity);
+        updateBackgroundOpacity();
+
+        function setPairFrame(pair, frameIndex) {
+            const [image1, image2] = pair;
+            const isImage1Active = image1.classList.contains('active');
+            const isImage2Active = image2.classList.contains('active');
+
+            if ((frameIndex === 0 && isImage1Active) || (frameIndex === 1 && isImage2Active)) {
+                return;
+            }
+
+            if (frameIndex === 0) {
+                image1.classList.add('active');
+                if (isImage2Active) {
+                    image2.classList.remove('active');
+                }
+            } else {
+                image2.classList.add('active');
+                if (isImage1Active) {
+                    image1.classList.remove('active');
+                }
+            }
+        }
+
+        function showFrame(frameIndex) {
+            imagePairs.forEach(pair => setPairFrame(pair, frameIndex));
+        }
+
+        function showStaticFrame() {
+            imagePairs.forEach(pair => setPairFrame(pair, 0));
+        }
+
+        async function initAudio() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                });
+
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                microphone = audioContext.createMediaStreamSource(stream);
+
+                analyser.fftSize = 2048;
+                analyser.smoothingTimeConstant = 0.3;
+                timeDataArray = new Float32Array(analyser.fftSize);
+
+                microphone.connect(analyser);
+
+                document.getElementById('errorMessage').classList.remove('show');
+
+                showStaticFrame();
+                animate();
+
+            } catch (error) {
+                console.error('マイクへのアクセスエラー:', error);
+                document.getElementById('errorMessage').classList.add('show');
+            }
+        }
+
+        function animate() {
+            if (!analyser) return;
+
+            analyser.getFloatTimeDomainData(timeDataArray);
+
+            let sum = 0;
+            for (let i = 0; i < timeDataArray.length; i++) {
+                const sample = timeDataArray[i];
+                sum += sample * sample;
+            }
+
+            const rms = Math.sqrt(sum / timeDataArray.length);
+            const rmsDb = rms > 0 ? 20 * Math.log10(rms) : MIN_DB;
+
+            const shouldAnimate = rmsDb >= THRESHOLD_DB;
+
+            if (shouldAnimate) {
+                if (!isAnimating) {
+                    isAnimating = true;
+                }
+
+                const currentTime = Date.now();
+                if (currentTime - lastFrameTime >= FRAME_INTERVAL) {
+                    currentFrame = (currentFrame + 1) % 2;
+                    showFrame(currentFrame);
+                    lastFrameTime = currentTime;
+                }
+            } else if (isAnimating) {
+                isAnimating = false;
+            }
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('load', initAudio);
+
+        window.addEventListener('beforeunload', () => {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            if (audioContext) {
+                audioContext.close();
+            }
+        });
+    </script>
+</body>
+</html>
