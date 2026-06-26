@@ -15,7 +15,7 @@
             font-family: 'Segoe UI', 'Meiryo', sans-serif;
             min-height: 100vh;
             overflow: hidden;
-            background-color: rgba(0, 0, 0, 1);
+            background-color: rgba(0, 0, 0, 0);
         }
 
         .bg-control {
@@ -100,8 +100,8 @@
 <body>
     <div class="bg-control">
         <label for="bgOpacity">背景透過度</label>
-        <input type="range" id="bgOpacity" min="0" max="100" value="0">
-        <span class="opacity-value" id="bgOpacityValue">0%</span>
+        <input type="range" id="bgOpacity" min="0" max="100" value="100">
+        <span class="opacity-value" id="bgOpacityValue">100%</span>
     </div>
 
     <div class="main-container">
@@ -127,10 +127,13 @@
         let animationFrameId;
         let currentFrame = 0;
         let lastFrameTime = 0;
+        let silenceStartTime = null;
         const FRAME_INTERVAL = 100;
+        const SILENCE_RESET_DELAY = 120;
 
         const MIN_DB = -60;
-        const THRESHOLD_DB = -50;
+        const THRESHOLD_ON_DB = -50;
+        const THRESHOLD_OFF_DB = -55;
         let isAnimating = false;
 
         const imagePairs = [
@@ -226,21 +229,40 @@
             const rms = Math.sqrt(sum / timeDataArray.length);
             const rmsDb = rms > 0 ? 20 * Math.log10(rms) : MIN_DB;
 
-            const shouldAnimate = rmsDb >= THRESHOLD_DB;
+            const now = Date.now();
 
-            if (shouldAnimate) {
+            if (rmsDb >= THRESHOLD_ON_DB) {
+                silenceStartTime = null;
+
                 if (!isAnimating) {
                     isAnimating = true;
+                    lastFrameTime = now;
                 }
 
-                const currentTime = Date.now();
-                if (currentTime - lastFrameTime >= FRAME_INTERVAL) {
+                if (now - lastFrameTime >= FRAME_INTERVAL) {
                     currentFrame = (currentFrame + 1) % 2;
                     showFrame(currentFrame);
-                    lastFrameTime = currentTime;
+                    lastFrameTime = now;
+                }
+            } else if (rmsDb < THRESHOLD_OFF_DB) {
+                if (isAnimating) {
+                    isAnimating = false;
+                    silenceStartTime = now;
+                } else if (
+                    silenceStartTime !== null &&
+                    now - silenceStartTime >= SILENCE_RESET_DELAY &&
+                    currentFrame !== 0
+                ) {
+                    currentFrame = 0;
+                    showStaticFrame();
+                    silenceStartTime = null;
                 }
             } else if (isAnimating) {
-                isAnimating = false;
+                if (now - lastFrameTime >= FRAME_INTERVAL) {
+                    currentFrame = (currentFrame + 1) % 2;
+                    showFrame(currentFrame);
+                    lastFrameTime = now;
+                }
             }
 
             animationFrameId = requestAnimationFrame(animate);
