@@ -18,35 +18,87 @@
             background-color: rgba(0, 0, 0, 0);
         }
 
-        .bg-control {
+        .control-panel {
             position: fixed;
             top: 12px;
             left: 12px;
             z-index: 100;
             display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 0;
+            max-width: calc(100vw - 24px);
+            padding: 10px 12px;
             background: rgba(40, 40, 40, 0.85);
             border-radius: 6px;
             color: #fff;
-            font-size: 13px;
+            font-size: 12px;
             user-select: none;
         }
 
-        .bg-control label {
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 148px;
+            padding: 0 12px;
+        }
+
+        .control-group:first-child {
+            padding-left: 0;
+        }
+
+        .control-group:last-child {
+            padding-right: 0;
+        }
+
+        .control-divider {
+            width: 1px;
+            align-self: stretch;
+            background: rgba(255, 255, 255, 0.2);
+            margin: 2px 0;
+        }
+
+        .control-header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .control-header label,
+        .control-label {
+            font-size: 12px;
+            font-weight: 600;
             white-space: nowrap;
         }
 
-        .bg-control input[type="range"] {
-            width: 120px;
+        .control-value {
+            min-width: 44px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            color: #cce8ff;
+            font-size: 11px;
+        }
+
+        .control-panel input[type="range"] {
+            width: 100%;
             cursor: pointer;
         }
 
-        .bg-control .opacity-value {
-            min-width: 36px;
-            text-align: right;
-            font-variant-numeric: tabular-nums;
+        .control-hint {
+            font-size: 10px;
+            line-height: 1.35;
+            color: rgba(255, 255, 255, 0.65);
+        }
+
+        .control-hint strong {
+            color: rgba(255, 255, 255, 0.85);
+            font-weight: 600;
+        }
+
+        .control-group--meter .control-value {
+            font-size: 12px;
         }
 
         .main-container {
@@ -98,10 +150,61 @@
     </style>
 </head>
 <body>
-    <div class="bg-control">
-        <label for="bgOpacity">背景透過度</label>
-        <input type="range" id="bgOpacity" min="0" max="100" value="100">
-        <span class="opacity-value" id="bgOpacityValue">100%</span>
+    <div class="control-panel">
+        <div class="control-group">
+            <div class="control-header">
+                <label for="bgOpacity" title="背景の黒をどれだけ透かすか。OBSでは100%推奨">背景透過度</label>
+                <span class="control-value" id="bgOpacityValue">100%</span>
+            </div>
+            <input type="range" id="bgOpacity" min="0" max="100" value="100">
+            <p class="control-hint">右ほど背景が透明になります</p>
+        </div>
+
+        <div class="control-divider"></div>
+
+        <div class="control-group">
+            <div class="control-header">
+                <label for="micSensitivity" title="この音量以上で口パクを開始します">開始感度</label>
+                <span class="control-value" id="micSensitivityValue">-50 dB</span>
+            </div>
+            <input type="range" id="micSensitivity" min="0" max="100" value="50">
+            <p class="control-hint">右ほど<strong>小さい声</strong>でも反応します</p>
+        </div>
+
+        <div class="control-divider"></div>
+
+        <div class="control-group">
+            <div class="control-header">
+                <label for="hysteresisGap" title="開始と停止の閾値差。大きいほど境目でのチラつきを防ぎます">切り替え幅</label>
+                <span class="control-value" id="hysteresisGapValue">5 dB</span>
+            </div>
+            <input type="range" id="hysteresisGap" min="3" max="15" value="5">
+            <p class="control-hint">開始・停止の差。大きいほど<strong>安定</strong>します</p>
+        </div>
+
+        <div class="control-divider"></div>
+
+        <div class="control-group">
+            <div class="control-header">
+                <label for="silenceResetDelay" title="無音が続いてから1コマ目に戻るまでの待ち時間">無音リセット</label>
+                <span class="control-value" id="silenceResetDelayValue">120 ms</span>
+            </div>
+            <input type="range" id="silenceResetDelay" min="50" max="300" step="10" value="120">
+            <p class="control-hint">無音後、1コマ目へ戻るまでの<strong>待ち時間</strong></p>
+        </div>
+
+        <div class="control-divider"></div>
+
+        <div class="control-group control-group--meter">
+            <div class="control-header">
+                <span class="control-label" title="現在のマイク入力レベル（調整の目安）">入力レベル</span>
+                <span class="control-value" id="inputLevelValue">— dB</span>
+            </div>
+            <p class="control-hint">
+                開始 <strong id="thresholdOnDisplay">-50</strong> dB ／
+                停止 <strong id="thresholdOffDisplay">-55</strong> dB
+            </p>
+        </div>
     </div>
 
     <div class="main-container">
@@ -128,12 +231,14 @@
         let currentFrame = 0;
         let lastFrameTime = 0;
         let silenceStartTime = null;
-        const FRAME_INTERVAL = 100;
-        const SILENCE_RESET_DELAY = 120;
+        let frameInterval = 100;
+        let silenceResetDelay = 120;
 
         const MIN_DB = -60;
-        const THRESHOLD_ON_DB = -50;
-        const THRESHOLD_OFF_DB = -55;
+        const SENSITIVITY_MIN_DB = -65;
+        const SENSITIVITY_MAX_DB = -35;
+        let thresholdOnDb = -50;
+        let thresholdOffDb = -55;
         let isAnimating = false;
 
         const imagePairs = [
@@ -143,6 +248,35 @@
 
         const bgOpacitySlider = document.getElementById('bgOpacity');
         const bgOpacityValue = document.getElementById('bgOpacityValue');
+        const micSensitivitySlider = document.getElementById('micSensitivity');
+        const micSensitivityValue = document.getElementById('micSensitivityValue');
+        const hysteresisGapSlider = document.getElementById('hysteresisGap');
+        const hysteresisGapValue = document.getElementById('hysteresisGapValue');
+        const silenceResetDelaySlider = document.getElementById('silenceResetDelay');
+        const silenceResetDelayValue = document.getElementById('silenceResetDelayValue');
+        const inputLevelValue = document.getElementById('inputLevelValue');
+        const thresholdOnDisplay = document.getElementById('thresholdOnDisplay');
+        const thresholdOffDisplay = document.getElementById('thresholdOffDisplay');
+
+        function sliderToOnDb(sliderValue) {
+            const ratio = Number(sliderValue) / 100;
+            return SENSITIVITY_MAX_DB - ratio * (SENSITIVITY_MAX_DB - SENSITIVITY_MIN_DB);
+        }
+
+        function updateThresholds() {
+            thresholdOnDb = sliderToOnDb(micSensitivitySlider.value);
+            thresholdOffDb = thresholdOnDb - Number(hysteresisGapSlider.value);
+
+            micSensitivityValue.textContent = `${thresholdOnDb.toFixed(0)} dB`;
+            hysteresisGapValue.textContent = `${hysteresisGapSlider.value} dB`;
+            thresholdOnDisplay.textContent = thresholdOnDb.toFixed(0);
+            thresholdOffDisplay.textContent = thresholdOffDb.toFixed(0);
+        }
+
+        function updateSilenceResetDelay() {
+            silenceResetDelay = Number(silenceResetDelaySlider.value);
+            silenceResetDelayValue.textContent = `${silenceResetDelay} ms`;
+        }
 
         function updateBackgroundOpacity() {
             const transparency = Number(bgOpacitySlider.value);
@@ -152,7 +286,12 @@
         }
 
         bgOpacitySlider.addEventListener('input', updateBackgroundOpacity);
+        micSensitivitySlider.addEventListener('input', updateThresholds);
+        hysteresisGapSlider.addEventListener('input', updateThresholds);
+        silenceResetDelaySlider.addEventListener('input', updateSilenceResetDelay);
         updateBackgroundOpacity();
+        updateThresholds();
+        updateSilenceResetDelay();
 
         function setPairFrame(pair, frameIndex) {
             const [image1, image2] = pair;
@@ -228,10 +367,11 @@
 
             const rms = Math.sqrt(sum / timeDataArray.length);
             const rmsDb = rms > 0 ? 20 * Math.log10(rms) : MIN_DB;
+            inputLevelValue.textContent = `${rmsDb.toFixed(0)} dB`;
 
             const now = Date.now();
 
-            if (rmsDb >= THRESHOLD_ON_DB) {
+            if (rmsDb >= thresholdOnDb) {
                 silenceStartTime = null;
 
                 if (!isAnimating) {
@@ -239,18 +379,18 @@
                     lastFrameTime = now;
                 }
 
-                if (now - lastFrameTime >= FRAME_INTERVAL) {
+                if (now - lastFrameTime >= frameInterval) {
                     currentFrame = (currentFrame + 1) % 2;
                     showFrame(currentFrame);
                     lastFrameTime = now;
                 }
-            } else if (rmsDb < THRESHOLD_OFF_DB) {
+            } else if (rmsDb < thresholdOffDb) {
                 if (isAnimating) {
                     isAnimating = false;
                     silenceStartTime = now;
                 } else if (
                     silenceStartTime !== null &&
-                    now - silenceStartTime >= SILENCE_RESET_DELAY &&
+                    now - silenceStartTime >= silenceResetDelay &&
                     currentFrame !== 0
                 ) {
                     currentFrame = 0;
@@ -258,7 +398,7 @@
                     silenceStartTime = null;
                 }
             } else if (isAnimating) {
-                if (now - lastFrameTime >= FRAME_INTERVAL) {
+                if (now - lastFrameTime >= frameInterval) {
                     currentFrame = (currentFrame + 1) % 2;
                     showFrame(currentFrame);
                     lastFrameTime = now;
