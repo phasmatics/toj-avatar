@@ -15,7 +15,7 @@
             font-family: 'Segoe UI', 'Meiryo', sans-serif;
             min-height: 100vh;
             overflow: hidden;
-            background-color: rgba(0, 0, 0, 0);
+            background-color: rgb(0, 255, 0);
         }
 
         .control-panel {
@@ -153,11 +153,11 @@
     <div class="control-panel">
         <div class="control-group">
             <div class="control-header">
-                <label for="bgOpacity" title="背景の黒をどれだけ透かすか。OBSでは100%推奨">背景透過度</label>
-                <span class="control-value" id="bgOpacityValue">100%</span>
+                <label for="bgOpacity" title="グリーンバック背景をどれだけ透かすか。合成時は0%推奨">背景透過度</label>
+                <span class="control-value" id="bgOpacityValue">0%</span>
             </div>
-            <input type="range" id="bgOpacity" min="0" max="100" value="100">
-            <p class="control-hint">右ほど背景が透明になります</p>
+            <input type="range" id="bgOpacity" min="0" max="100" value="0">
+            <p class="control-hint">左がグリーンバック（#00FF00）。右ほど透明になります</p>
         </div>
 
         <div class="control-divider"></div>
@@ -281,7 +281,7 @@
         function updateBackgroundOpacity() {
             const transparency = Number(bgOpacitySlider.value);
             const alpha = 1 - transparency / 100;
-            document.body.style.backgroundColor = `rgba(0, 0, 0, ${alpha})`;
+            document.body.style.backgroundColor = `rgba(0, 255, 0, ${alpha})`;
             bgOpacityValue.textContent = `${transparency}%`;
         }
 
